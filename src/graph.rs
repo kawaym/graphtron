@@ -1,4 +1,4 @@
-use std::usize;
+use std::{collections::VecDeque, result, usize};
 
 use crate::vertex::Vertex;
 
@@ -149,5 +149,53 @@ impl Graph {
         }
 
         number
+    }
+}
+
+impl Graph {
+    fn unmark_all_vertices(&mut self) {
+        for vertex_opt in &mut self.vertices {
+            if let Some(vertex) = vertex_opt {
+                vertex.unmark();
+            }
+        }
+    }
+
+    fn bfs_core(&mut self, root_id: usize, stop_id: Option<usize>) {
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        let mut visited_order: Vec<usize> = Vec::new();
+
+        let n = self.vertices_number();
+        let mut levels: Vec<usize> = vec![0; n];
+        let mut parents: Vec<Option<usize>> = vec![None; n];
+
+        let mut stop_flag: bool = false;
+
+        self.unmark_all_vertices();
+
+        if let Some(root) = &mut self.vertices[root_id] {
+            queue.push_back(root_id);
+            root.mark();
+
+            loop {
+                if let Some(id) = queue.pop_front() {
+                    if let Some(parent) = parents[id] {
+                        levels[id] = levels[parent] + 1
+                    }
+
+                    if stop_flag {
+                        break;
+                    }
+
+                    if let Some(vertex) = &self.vertices[id] {
+                        for edge in vertex.edges() {
+                            match self.vertices[ed] {}
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
     }
 }

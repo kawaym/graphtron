@@ -1,10 +1,16 @@
 #[derive(Clone)]
+enum VertexStatus {
+    Marked,
+    Unmarked,
+}
 
+#[derive(Clone)]
 ///A vertex is a fundamental unit of a graph that represents an individual entity or point. Represents its neighbors with a adjacency list
 pub struct Vertex {
     id: usize,
     edges: Vec<(usize, f64)>,
     degree: usize,
+    status: VertexStatus,
 }
 
 impl Vertex {
@@ -14,6 +20,7 @@ impl Vertex {
             id,
             edges: Vec::new(),
             degree: 0,
+            status: VertexStatus::Unmarked,
         }
     }
 
@@ -40,5 +47,15 @@ impl Vertex {
     /// Returns the degree from the vertex
     pub fn degree(&self) -> usize {
         self.degree
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn mark(&mut self) {
+        self.status = VertexStatus::Marked
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn unmark(&mut self) {
+        self.status = VertexStatus::Unmarked
     }
 }
