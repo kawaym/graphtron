@@ -1,6 +1,7 @@
-use std::{collections::VecDeque, result, usize};
+use std::{collections::VecDeque, usize};
 
 use crate::vertex::Vertex;
+use crate::vertex::VertexStatus;
 
 /// A graph is a mathematical structure used to model pairwise relationships between objects. It consists of vertices connected by edges.
 pub struct Graph {
@@ -161,9 +162,14 @@ impl Graph {
         }
     }
 
-    fn bfs_core(&mut self, root_id: usize, stop_id: Option<usize>) {
+    fn bfs_core(
+        &mut self,
+        root_id: usize,
+        stop_id: Option<usize>,
+    ) -> Vec<(usize, usize, Option<usize>)> {
         let mut queue: VecDeque<usize> = VecDeque::new();
         let mut visited_order: Vec<usize> = Vec::new();
+        let mut tree: Vec<(usize, usize, Option<usize>)> = Vec::new();
 
         let n = self.vertices_number();
         let mut levels: Vec<usize> = vec![0; n];
@@ -179,6 +185,7 @@ impl Graph {
 
             loop {
                 if let Some(id) = queue.pop_front() {
+                    visited_order.push(id);
                     if let Some(parent) = parents[id] {
                         levels[id] = levels[parent] + 1
                     }
@@ -187,9 +194,22 @@ impl Graph {
                         break;
                     }
 
-                    if let Some(vertex) = &self.vertices[id] {
-                        for edge in vertex.edges() {
-                            match self.vertices[ed] {}
+                    if let Some(vertex) = &self.vertices[id].clone() {
+                        for edge in &vertex.edges {
+                            match self.vertices[edge.target].as_mut().unwrap().status {
+                                VertexStatus::Marked => (),
+                                VertexStatus::Unmarked => {
+                                    parents[edge.target] = Some(id);
+                                    self.vertices[edge.target].as_mut().unwrap().mark();
+                                    queue.push_back(edge.target);
+                                }
+                            }
+                            if let Some(stop_id_parsed) = stop_id {
+                                if stop_id_parsed == edge.target {
+                                    stop_flag = true;
+                                    break;
+                                }
+                            }
                         }
                     }
                 } else {
@@ -197,5 +217,59 @@ impl Graph {
                 }
             }
         }
+
+        // returns the node, the level of the node and the parent of the node
+
+        for i in 0..visited_order.len() {
+            tree.push((visited_order[i], levels[i], parents[i]))
+        }
+
+        tree
+    }
+
+    fn dfs_core(&mut self, root_id: usize) -> Vec<(usize, usize, Option<usize>)> {
+        let mut stack: Vec<usize> = Vec::new();
+        let mut visited_order: Vec<usize> = Vec::new();
+        let mut tree: Vec<(usize, usize, Option<usize>)> = Vec::new();
+
+        let n = self.vertices_number();
+        let mut levels: Vec<usize> = vec![0; n];
+        let mut parents: Vec<Option<usize>> = vec![None; n];
+
+        self.unmark_all_vertices();
+
+        if let Some(root) = &mut self.vertices[root_id] {
+            stack.push(root_id);
+            root.mark();
+
+            loop {
+                if let Some(id) = stack.pop() {
+                    visited_order.push(id);
+                    if let Some(parent) = parents[id] {
+                        levels[id] = levels[parent] + 1
+                    }
+
+                    if let Some(vertex) = &self.vertices[id].clone() {
+                        for edge in &vertex.edges {
+                            match self.vertices[edge.target].as_mut().unwrap().status {
+                                VertexStatus::Marked => (),
+                                VertexStatus::Unmarked => {
+                                    parents[edge.target] = Some(id);
+                                    self.vertices[edge.target].as_mut().unwrap().mark();
+                                    stack.push(edge.target);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        for i in 0..visited_order.len() {
+            tree.push((visited_order[i], levels[i], parents[i]))
+        }
+
+        tree
     }
 }

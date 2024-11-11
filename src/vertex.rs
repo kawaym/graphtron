@@ -1,5 +1,11 @@
 #[derive(Clone)]
-enum VertexStatus {
+pub(super) struct Edge {
+    pub(super) target: usize,
+    weight: f64,
+}
+
+#[derive(Clone)]
+pub(super) enum VertexStatus {
     Marked,
     Unmarked,
 }
@@ -8,9 +14,9 @@ enum VertexStatus {
 ///A vertex is a fundamental unit of a graph that represents an individual entity or point. Represents its neighbors with a adjacency list
 pub struct Vertex {
     id: usize,
-    edges: Vec<(usize, f64)>,
+    pub(super) edges: Vec<Edge>,
     degree: usize,
-    status: VertexStatus,
+    pub(super) status: VertexStatus,
 }
 
 impl Vertex {
@@ -31,17 +37,15 @@ impl Vertex {
     /// Adds a edge to the vertex
     pub fn add_edge(&mut self, target: &usize, weight: &f64) {
         self.add_degree();
-        self.edges.push((*target, *weight));
+        self.edges.push(Edge {
+            target: *target,
+            weight: *weight,
+        });
     }
 
     /// Returns the id from the vertex
     pub fn id(&self) -> usize {
         self.id
-    }
-
-    /// Returns the edges from the vertex
-    pub fn edges(self) -> Vec<(usize, f64)> {
-        self.edges
     }
 
     /// Returns the degree from the vertex
