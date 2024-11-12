@@ -1,5 +1,6 @@
-use std::{collections::VecDeque, usize};
+use std::collections::VecDeque;
 
+use crate::vertex;
 use crate::vertex::Vertex;
 use crate::vertex::VertexStatus;
 
@@ -221,7 +222,7 @@ impl Graph {
         // returns the node, the level of the node and the parent of the node
 
         for i in 0..visited_order.len() {
-            tree.push((visited_order[i], levels[i], parents[i]))
+            tree.push((i, levels[i], parents[i]))
         }
 
         tree
@@ -266,10 +267,87 @@ impl Graph {
                 }
             }
         }
+
+        // returns the node, the level of the node and the parent of the node
+
         for i in 0..visited_order.len() {
-            tree.push((visited_order[i], levels[i], parents[i]))
+            tree.push((i, levels[i], parents[i]))
         }
 
         tree
+    }
+}
+
+///Methods for various algorithms within graphs
+impl Graph {
+    /// Calculates the distance between the root_id and the stop_id using BFS
+    pub fn calculate_distance(&mut self, root_id: usize, stop_id: usize) -> usize {
+        let mut distance = usize::MIN;
+        let data = self.bfs_core(root_id, Some(stop_id));
+
+        for vector in data {
+            if vector.1 > distance {
+                distance = vector.1;
+            }
+        }
+
+        distance
+    }
+
+    /// Calculates the diameter of the graph
+    /// * `mode` - Use exact to compute using the default algorithm, slow on large graphs. Use approximate for when working with large graphs
+    pub fn calculate_diameter(&mut self, mode: &str) -> Result<usize, &str> {
+        //TODO encontrar maneira de iterar sobre os vértices sem utilizar clone para evitar carga na memória
+        let mut diameter = usize::MIN;
+
+        if mode == "exact" {
+            for i in 0..self.vertices.len() {
+                if let Some(vertex_start) = &self.vertices[i].clone() {
+                    for j in 0..self.vertices.len() {
+                        if let Some(vertex_end) = &self.vertices[j].clone() {
+                            if vertex_start.id() == vertex_end.id() {
+                                continue;
+                            }
+
+                            let distance =
+                                &mut self.calculate_distance(vertex_start.id(), vertex_end.id());
+                            if *distance > diameter {
+                                diameter = *distance;
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(diameter);
+        }
+
+        if mode == "approximate" {
+            let mut chosen_vertex: usize = 0;
+            let vertex_count = self.vertices_number();
+
+            for vertex_idx in 0..vertex_count {
+                if let Some(vertex) = &self.vertices[vertex_idx] {
+                    let bfs = self.bfs_core(vertex.id(), None);
+                    for i in bfs {
+                        if i.1 > diameter {
+                            diameter = i.1;
+                            chosen_vertex = i.0;
+                        }
+                    }
+                }
+            }
+
+            let bfs = self.bfs_core(chosen_vertex, None);
+            for i in bfs {
+                if i.1 > diameter {
+                    diameter = i.1;
+                    chosen_vertex = i.0;
+                }
+            }
+
+            return Ok(diameter);
+        }
+
+        Err("A method was not chosen, please choose one.")
     }
 }
