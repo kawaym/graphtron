@@ -1,6 +1,7 @@
 #[derive(Clone)]
 pub(super) struct Edge {
     pub(super) target: usize,
+    #[allow(dead_code)]
     weight: f64,
 }
 

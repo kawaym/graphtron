@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 
-use crate::vertex;
 use crate::vertex::Vertex;
 use crate::vertex::VertexStatus;
 
@@ -165,12 +164,11 @@ impl Graph {
 
     fn bfs_core(
         &mut self,
-        root_id: usize,
+        start_id: usize,
         stop_id: Option<usize>,
-    ) -> Vec<(usize, usize, Option<usize>)> {
+    ) -> (Vec<Option<Vertex>>, Vec<usize>, Vec<Option<usize>>) {
         let mut queue: VecDeque<usize> = VecDeque::new();
         let mut visited_order: Vec<usize> = Vec::new();
-        let mut tree: Vec<(usize, usize, Option<usize>)> = Vec::new();
 
         let n = self.vertices_number();
         let mut levels: Vec<usize> = vec![0; n];
@@ -178,10 +176,8 @@ impl Graph {
 
         let mut stop_flag: bool = false;
 
-        self.unmark_all_vertices();
-
-        if let Some(root) = &mut self.vertices[root_id] {
-            queue.push_back(root_id);
+        if let Some(root) = &mut self.vertices[start_id] {
+            queue.push_back(start_id);
             root.mark();
 
             loop {
@@ -219,28 +215,22 @@ impl Graph {
             }
         }
 
-        // returns the node, the level of the node and the parent of the node
-
-        for i in 0..visited_order.len() {
-            tree.push((i, levels[i], parents[i]))
-        }
-
-        tree
+        (self.vertices.clone(), levels, parents)
     }
 
-    fn dfs_core(&mut self, root_id: usize) -> Vec<(usize, usize, Option<usize>)> {
+    fn dfs_core(
+        &mut self,
+        start_id: usize,
+    ) -> (Vec<Option<Vertex>>, Vec<usize>, Vec<Option<usize>>) {
         let mut stack: Vec<usize> = Vec::new();
         let mut visited_order: Vec<usize> = Vec::new();
-        let mut tree: Vec<(usize, usize, Option<usize>)> = Vec::new();
 
         let n = self.vertices_number();
         let mut levels: Vec<usize> = vec![0; n];
         let mut parents: Vec<Option<usize>> = vec![None; n];
 
-        self.unmark_all_vertices();
-
-        if let Some(root) = &mut self.vertices[root_id] {
-            stack.push(root_id);
+        if let Some(root) = &mut self.vertices[start_id] {
+            stack.push(start_id);
             root.mark();
 
             loop {
@@ -268,26 +258,28 @@ impl Graph {
             }
         }
 
-        // returns the node, the level of the node and the parent of the node
-
-        for i in 0..visited_order.len() {
-            tree.push((i, levels[i], parents[i]))
-        }
-
-        tree
+        (self.vertices.clone(), levels, parents)
     }
 }
 
 ///Methods for various algorithms within graphs
 impl Graph {
-    /// Calculates the distance between the root_id and the stop_id using BFS
-    pub fn calculate_distance(&mut self, root_id: usize, stop_id: usize) -> usize {
-        let mut distance = usize::MIN;
-        let data = self.bfs_core(root_id, Some(stop_id));
+    pub fn bfs(&mut self, start_id: usize, stop_id: Option<usize>) {
+        let data = self.bfs_core(start_id, stop_id);
+    }
 
-        for vector in data {
-            if vector.1 > distance {
-                distance = vector.1;
+    /// Calculates the distance between the start_id and the stop_id using BFS
+    pub fn calculate_distance(&mut self, start_id: usize, stop_id: usize) -> usize {
+        self.unmark_all_vertices();
+
+        let mut distance = usize::MIN;
+        let data = self.bfs_core(start_id, Some(stop_id));
+
+        for vertex_opt in data.0 {
+            if let Some(vertex) = vertex_opt {
+                if vertex.id() > distance {
+                    distance = vertex.id();
+                }
             }
         }
 
@@ -297,7 +289,8 @@ impl Graph {
     /// Calculates the diameter of the graph
     /// * `mode` - Use exact to compute using the default algorithm, slow on large graphs. Use approximate for when working with large graphs
     pub fn calculate_diameter(&mut self, mode: &str) -> Result<usize, &str> {
-        //TODO encontrar maneira de iterar sobre os vértices sem utilizar clone para evitar carga na memória
+        self.unmark_all_vertices();
+
         let mut diameter = usize::MIN;
 
         if mode == "exact" {
@@ -328,20 +321,19 @@ impl Graph {
             for vertex_idx in 0..vertex_count {
                 if let Some(vertex) = &self.vertices[vertex_idx] {
                     let bfs = self.bfs_core(vertex.id(), None);
-                    for i in bfs {
-                        if i.1 > diameter {
-                            diameter = i.1;
-                            chosen_vertex = i.0;
+                    for i in 0..bfs.0.len() {
+                        if bfs.1[i] > diameter {
+                            diameter = bfs.1[i];
+                            chosen_vertex = bfs.0[i].clone().unwrap().id();
                         }
                     }
                 }
             }
 
             let bfs = self.bfs_core(chosen_vertex, None);
-            for i in bfs {
-                if i.1 > diameter {
-                    diameter = i.1;
-                    chosen_vertex = i.0;
+            for i in 0..bfs.0.len() {
+                if bfs.1[i] > diameter {
+                    diameter = bfs.1[i];
                 }
             }
 
@@ -349,5 +341,32 @@ impl Graph {
         }
 
         Err("A method was not chosen, please choose one.")
+    }
+
+    /// Calculates and returns the connected components of the graph. It works by searching with DFS in loop using all unmarked vertices
+    pub fn calculate_connected_components(&mut self) -> Vec<Vec<usize>> {
+        self.unmark_all_vertices();
+
+        let mut components: Vec<Vec<usize>> = Vec::new();
+        let vertex_count = self.vertices_number();
+
+        for vertex_idx in 0..vertex_count {
+            if let Some(vertex) = &self.vertices[vertex_idx] {
+                match vertex.status {
+                    VertexStatus::Marked => (),
+                    VertexStatus::Unmarked => {
+                        let component = self
+                            .dfs_core(vertex.id())
+                            .0
+                            .into_iter()
+                            .map(|x| x.unwrap().id())
+                            .collect::<Vec<usize>>();
+                        components.push(component);
+                    }
+                }
+            }
+        }
+
+        components
     }
 }
