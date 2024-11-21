@@ -1,12 +1,39 @@
-use std::collections::VecDeque;
+use core::f64;
+use ordered_float::OrderedFloat;
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, VecDeque},
+    usize,
+};
 
+use crate::vertex::Edge;
 use crate::vertex::Vertex;
 use crate::vertex::VertexStatus;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct State {
+    cost: OrderedFloat<f64>,
+    position: usize,
+}
+
+impl Ord for State {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.cost.cmp(&self.cost) // inversão para que o BinaryHeap funcione como uma min-heap
+    }
+}
+
+impl PartialOrd for State {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 /// A graph is a mathematical structure used to model pairwise relationships between objects. It consists of vertices connected by edges.
 pub struct Graph {
     vertices: Vec<Option<Vertex>>,
     is_bidirectional: bool,
+    components: Option<Vec<Vec<usize>>>,
+    has_negative_weights: bool,
 }
 
 ///Methods working with creation and update to the graph
@@ -19,6 +46,8 @@ impl Graph {
                 Some(value) => value,
                 None => true,
             },
+            components: None,
+            has_negative_weights: false,
         };
 
         graph
@@ -53,6 +82,10 @@ impl Graph {
         if self.is_bidirectional {
             let to_vertex = self.vertices[*to].as_mut().unwrap();
             to_vertex.add_edge(from, weight);
+        }
+
+        if *weight < 0.0 {
+            self.has_negative_weights = true
         }
 
         Ok(())
@@ -264,10 +297,6 @@ impl Graph {
 
 ///Methods for various algorithms within graphs
 impl Graph {
-    pub fn bfs(&mut self, start_id: usize, stop_id: Option<usize>) {
-        let data = self.bfs_core(start_id, stop_id);
-    }
-
     /// Calculates the distance between the start_id and the stop_id using BFS
     pub fn calculate_distance(&mut self, start_id: usize, stop_id: usize) -> usize {
         self.unmark_all_vertices();
@@ -345,6 +374,9 @@ impl Graph {
 
     /// Calculates and returns the connected components of the graph. It works by searching with DFS in loop using all unmarked vertices
     pub fn calculate_connected_components(&mut self) -> Vec<Vec<usize>> {
+        if let Some(components) = &self.components {
+            return components.to_vec();
+        }
         self.unmark_all_vertices();
 
         let mut components: Vec<Vec<usize>> = Vec::new();
@@ -367,6 +399,143 @@ impl Graph {
             }
         }
 
+        self.components = Some(components.clone());
+
         components
+    }
+}
+
+impl Graph {
+    pub fn create_djikstra_vector(
+        &self,
+        root_id: usize,
+        destinations: &[usize],
+    ) -> Result<(Vec<f64>, Vec<Vec<Edge>>), &str> {
+        if self.has_negative_weights {
+            return Err(
+                "This library does not work with negative cycles for minimum distances computing",
+            );
+        }
+
+        let n = self.vertices_number();
+        let mut distances = vec![f64::INFINITY; n];
+        let mut visited = vec![false; n];
+        let mut parents = vec![None; n];
+
+        distances[root_id] = 0.0;
+
+        for _ in 0..n {
+            let mut u = None;
+            for i in 0..n {
+                if !visited[i] && (u.is_none() || distances[i] < distances[u.unwrap()]) {
+                    u = Some(i);
+                }
+            }
+
+            let u = match u {
+                Some(v) => v,
+                None => break,
+            };
+
+            visited[u] = true;
+
+            if let Some(vertex) = &self.vertices[u] {
+                for edge in &vertex.edges {
+                    let new_distance = distances[u] + edge.weight;
+                    if new_distance < distances[edge.target] {
+                        distances[edge.target] = new_distance;
+                        parents[edge.target] = Some(u);
+                    }
+                }
+            }
+        }
+
+        let mut paths = Vec::new();
+        for &target in destinations {
+            let mut path = Vec::new();
+            let current = target;
+
+            while let Some(parent) = parents[current] {
+                let weight = distances[current] - distances[parent];
+                path.push(Edge {
+                    target: current,
+                    weight,
+                })
+            }
+
+            path.reverse();
+            paths.push(path);
+        }
+
+        Ok((distances, paths))
+    }
+
+    pub fn create_distance_heap(
+        &self,
+        root_id: usize,
+        destinations: &[usize],
+    ) -> Result<(Vec<f64>, Vec<Vec<Edge>>), &str> {
+        if self.has_negative_weights {
+            return Err(
+                "This library does not work with negative cycles for minimum distances computing",
+            );
+        }
+
+        let n = self.vertices_number();
+        let mut distances = vec![OrderedFloat(f64::INFINITY); n];
+        let mut heap = BinaryHeap::new();
+        let mut parents: Vec<Option<usize>> = vec![None; n];
+
+        distances[root_id] = OrderedFloat(0.0);
+        heap.push(State {
+            cost: OrderedFloat(0.0),
+            position: root_id,
+        });
+
+        while let Some(State { cost, position }) = heap.pop() {
+            if cost > distances[position] {
+                continue;
+            }
+
+            if let Some(vertex) = &self.vertices[position] {
+                for edge in &vertex.edges {
+                    let next_cost = cost + OrderedFloat(edge.weight);
+
+                    if next_cost < distances[edge.target] {
+                        distances[edge.target] = next_cost;
+                        parents[edge.target] = Some(position);
+                        heap.push(State {
+                            cost: next_cost,
+                            position: edge.target,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Converte `distances` de OrderedFloat<f64> para f64 puro
+        let distances: Vec<f64> = distances.into_iter().map(|d| d.into_inner()).collect();
+
+        // Construção dos caminhos mínimos para os vértices de `destinations`
+        let mut paths = Vec::new();
+        for &target in destinations {
+            let mut path = Vec::new();
+            let mut current = target;
+
+            // Segue o caminho de `target` até `root_id` usando o vetor `parents`
+            while let Some(parent) = parents[current] {
+                let weight = distances[current] - distances[parent];
+                path.push(Edge {
+                    target: current,
+                    weight,
+                });
+                current = parent;
+            }
+
+            path.reverse(); // Inverte o caminho para que vá do `root_id` ao `target`
+            paths.push(path);
+        }
+
+        Ok((distances, paths))
     }
 }
