@@ -2,6 +2,16 @@
 pub struct Edge {
     pub(super) target: usize,
     pub(super) weight: f64,
+    #[allow(dead_code)]
+    pub(super) capacity: Option<usize>,
+    #[allow(dead_code)]
+    pub(super) flow: Option<usize>,
+}
+
+impl Edge {
+    pub fn residual_capacity(&self) -> f64 {
+        self.capacity.unwrap_or(0) as f64 - self.flow.unwrap_or(0) as f64
+    }
 }
 
 #[derive(Clone)]
@@ -35,11 +45,13 @@ impl Vertex {
     }
 
     /// Adds a edge to the vertex
-    pub fn add_edge(&mut self, target: &usize, weight: &f64) {
+    pub fn add_edge(&mut self, target: &usize, weight: &f64, capacity: &Option<usize>) {
         self.add_degree();
         self.edges.push(Edge {
             target: *target,
             weight: *weight,
+            capacity: *capacity,
+            flow: Some(0),
         });
     }
 

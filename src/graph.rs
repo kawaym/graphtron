@@ -64,7 +64,14 @@ impl Graph {
     }
 
     /// Adds an edge to the graph. Returns an Error if either of the vertices does not exist
-    pub fn add_edge(&mut self, from: &usize, to: &usize, weight: &f64) -> Result<(), &str> {
+    pub fn add_edge(
+        &mut self,
+        from: &usize,
+        to: &usize,
+        weight: &f64,
+        capactiy: &Option<usize>,
+        flow: &Option<usize>,
+    ) -> Result<(), &str> {
         match &self.vertices[*from] {
             Some(value) => value,
             None => return Err("From vertex does not exist!"),
@@ -77,11 +84,11 @@ impl Graph {
 
         let from_vertex = self.vertices[*from].as_mut().unwrap();
 
-        from_vertex.add_edge(to, weight);
+        from_vertex.add_edge(to, weight, capactiy);
 
         if self.is_bidirectional {
             let to_vertex = self.vertices[*to].as_mut().unwrap();
-            to_vertex.add_edge(from, weight);
+            to_vertex.add_edge(from, weight, capactiy);
         }
 
         if *weight < 0.0 {
@@ -460,6 +467,8 @@ impl Graph {
                 path.push(Edge {
                     target: current,
                     weight,
+                    capacity: None,
+                    flow: None,
                 })
             }
 
@@ -528,6 +537,8 @@ impl Graph {
                 path.push(Edge {
                     target: current,
                     weight,
+                    capacity: None,
+                    flow: None,
                 });
                 current = parent;
             }
@@ -537,5 +548,80 @@ impl Graph {
         }
 
         Ok((distances, paths))
+    }
+}
+
+impl Graph {
+    fn find_augmenting_path(
+        &self,
+        source: usize,
+        sink: usize,
+        visited: &mut Vec<bool>,
+        path: &mut Vec<usize>,
+    ) -> Option<f64> {
+        if source == sink {
+            return Some(f64::INFINITY);
+        }
+
+        visited[source] = true;
+
+        if let Some(vertex) = &self.vertices[source] {
+            for edge in &vertex.edges {
+                let residual_capacity = edge.residual_capacity();
+                if residual_capacity > 0.0 && !visited[edge.target] {
+                    path.push(edge.target);
+
+                    if let Some(flow) = self.find_augmenting_path(edge.target, sink, visited, path)
+                    {
+                        return Some(flow.min(residual_capacity));
+                    }
+
+                    path.pop();
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn ford_fulkerson(&mut self, source: usize, sink: usize) -> f64 {
+        let mut max_flow = 0.0;
+
+        loop {
+            let mut visited = vec![false; self.vertices.len()];
+            let mut path = vec![source];
+
+            if let Some(flow) = self.find_augmenting_path(source, sink, &mut visited, &mut path) {
+                max_flow += flow;
+
+                // Atualizar o fluxo no caminho encontrado
+                for i in 0..path.len() - 1 {
+                    let u = path[i];
+                    let v = path[i + 1];
+
+                    if let Some(vertex) = &mut self.vertices[u] {
+                        for edge in &mut vertex.edges {
+                            if edge.target == v {
+                                edge.flow = Some(edge.flow.unwrap_or(0) + flow as usize);
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(vertex) = &mut self.vertices[v] {
+                        for edge in &mut vertex.edges {
+                            if edge.target == u {
+                                edge.flow = Some(edge.flow.unwrap_or(0) - flow as usize);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                break; // Nenhum caminho de aumento encontrado
+            }
+        }
+
+        max_flow
     }
 }
