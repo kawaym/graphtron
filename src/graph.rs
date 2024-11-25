@@ -621,11 +621,7 @@ impl Graph {
 }
 
 impl Graph {
-    pub fn find_augmenting_path(
-        &mut self,
-        source: usize,
-        sink: usize,
-    ) -> Option<(Vec<usize>, f64)> {
+    fn find_augmenting_path(&mut self, source: usize, sink: usize) -> Option<(Vec<usize>, f64)> {
         let (_, visited_order, parents) = self.bfs_core(source, Some(sink));
 
         // Se o `sink` não foi visitado, não há caminho de aumento
@@ -776,14 +772,45 @@ impl Graph {
         }
     }
 
+    pub fn clone_with_zero_flows(&self) -> Graph {
+        Graph {
+            vertices: self
+                .vertices
+                .iter()
+                .map(|v| {
+                    v.as_ref().map(|vertex| Vertex {
+                        id: vertex.id,
+                        edges: vertex
+                            .edges
+                            .iter()
+                            .map(|edge| Edge {
+                                target: edge.target,
+                                weight: edge.weight,
+                                capacity: edge.capacity,
+                                flow: Some(0.), // Inicializa fluxo como zero
+                            })
+                            .collect(),
+                        degree: vertex.degree,
+                        status: VertexStatus::Unmarked,
+                    })
+                })
+                .collect(),
+            is_bidirectional: self.is_bidirectional,
+            components: None,
+            has_negative_weights: self.has_negative_weights,
+        }
+    }
+
     pub fn edmonds_karp(&mut self, source: usize, sink: usize) -> f64 {
+        // Cria uma cópia do grafo para operar
+        let mut residual_graph = self.clone_with_zero_flows();
         let mut max_flow = 0.0;
 
         loop {
-            // Encontra um caminho de aumento
-            if let Some((path, path_flow)) = self.find_augmenting_path(source, sink) {
-                // Atualiza o fluxo no grafo
-                self.update_flows(&path, path_flow);
+            // Encontra um caminho de aumento no grafo residual
+            if let Some((path, path_flow)) = residual_graph.find_augmenting_path(source, sink) {
+                // Atualiza o fluxo no grafo residual
+                residual_graph.update_flows(&path, path_flow);
 
                 // Incrementa o fluxo total
                 max_flow += path_flow;

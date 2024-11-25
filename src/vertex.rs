@@ -23,9 +23,9 @@ pub(super) enum VertexStatus {
 #[derive(Clone, Debug)]
 ///A vertex is a fundamental unit of a graph that represents an individual entity or point. Represents its neighbors with a adjacency list
 pub struct Vertex {
-    id: usize,
+    pub(super) id: usize,
     pub(super) edges: Vec<Edge>,
-    degree: usize,
+    pub(super) degree: usize,
     pub(super) status: VertexStatus,
 }
 
