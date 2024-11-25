@@ -61,7 +61,6 @@ fn read_numbers_from_line(line: String) -> Option<(String, String, String)> {
     None
 }
 
-
 ///Methods working with creation and update to the graph
 impl Graph {
     /// Returns a new Graph
@@ -101,13 +100,14 @@ impl Graph {
                     continue;
                 }
                 let numbers = read_numbers_from_line(line).unwrap();
-                graph.add_vertex(&(numbers.0.parse::<usize>().unwrap() - 1),);
-                graph.add_vertex(&(numbers.1.parse::<usize>().unwrap() - 1),);
+                graph.add_vertex(&(numbers.0.parse::<usize>().unwrap() - 1));
+                graph.add_vertex(&(numbers.1.parse::<usize>().unwrap() - 1));
                 graph.add_edge(
                     &(numbers.0.parse::<usize>().unwrap() - 1),
                     &(numbers.1.parse::<usize>().unwrap() - 1),
                     &1.0,
-                    &Some(numbers.2.parse::<f64>().unwrap()), &None
+                    &Some(numbers.2.parse::<f64>().unwrap()),
+                    &None,
                 );
             }
         }
@@ -121,7 +121,6 @@ impl Graph {
     pub fn from_file(filename: &str) -> Graph {
         Graph::_read_graph(filename, false)
     }
-
 
     /// Adds a vertex to the graph
     pub fn add_vertex(&mut self, id: &usize) {
@@ -622,55 +621,88 @@ impl Graph {
 }
 
 impl Graph {
-    fn find_augmenting_path(
-    &self,
-    source: usize,
-    sink: usize,
-    visited: &mut Vec<bool>,
-    path: &mut Vec<usize>,
-) -> Option<f64> {
-    let mut stack: Vec<(usize, usize, f64)> = vec![(source, 0, f64::INFINITY)];
-    let mut parents: Vec<Option<usize>> = vec![None; self.vertices.len()];
+    pub fn find_augmenting_path(
+        &mut self,
+        source: usize,
+        sink: usize,
+    ) -> Option<(Vec<usize>, f64)> {
+        let (_, visited_order, parents) = self.bfs_core(source, Some(sink));
 
-    while let Some((current, edge_index, flow)) = stack.pop() {
-        // Marcar o vértice como visitado
-        visited[current] = true;
-
-        // Verificar se chegamos ao destino
-        if current == sink {
-            // Reconstruir o caminho usando os pais
-            let mut current_node = sink;
-            path.clear();
-            while let Some(parent) = parents[current_node] {
-                path.push(current_node);
-                current_node = parent;
-            }
-            path.push(source);
-            path.reverse();
-            return Some(flow);
+        // Se o `sink` não foi visitado, não há caminho de aumento
+        if parents[sink].is_none() {
+            return None;
         }
 
-        // Acessar as arestas do vértice atual
-        if let Some(vertex) = &self.vertices[current] {
-            for (i, edge) in vertex.edges.iter().enumerate().skip(edge_index) {
-                let residual_capacity = edge.residual_capacity();
-                if residual_capacity > 0.0 && !visited[edge.target] {
-                    // Registrar o pai do vértice alvo
-                    parents[edge.target] = Some(current);
-                    // Adicionar o próximo estado à pilha
-                    stack.push((current, i + 1, flow)); // Continuar a explorar as arestas restantes do vértice atual
-                    stack.push((
-                        edge.target,
-                        0,
-                        flow.min(residual_capacity),
-                    )); // Explorar o próximo vértice
-                    break;
+        // Reconstrói o caminho de aumento a partir dos pais
+        let mut path = Vec::new();
+        let mut current = sink;
+        while let Some(parent) = parents[current] {
+            path.push(current);
+            current = parent;
+        }
+        path.push(source);
+        path.reverse();
+
+        // Determina o fluxo máximo permitido pelo caminho
+        let mut path_flow = f64::MAX;
+        for i in 0..path.len() - 1 {
+            let u = path[i];
+            let v = path[i + 1];
+            if let Some(vertex) = &self.vertices[u] {
+                if let Some(edge) = vertex.edges.iter().find(|e| e.target == v) {
+                    path_flow = path_flow.min(edge.residual_capacity());
                 }
             }
         }
+
+        Some((path, path_flow))
     }
 
-    None
+    fn find_augmenting_path_ff(
+        &self,
+        source: usize,
+        sink: usize,
+        visited: &mut Vec<bool>,
+        path: &mut Vec<usize>,
+    ) -> Option<f64> {
+        let mut stack: Vec<(usize, usize, f64)> = vec![(source, 0, f64::INFINITY)];
+        let mut parents: Vec<Option<usize>> = vec![None; self.vertices.len()];
+
+        while let Some((current, edge_index, flow)) = stack.pop() {
+            // Marcar o vértice como visitado
+            visited[current] = true;
+
+            // Verificar se chegamos ao destino
+            if current == sink {
+                // Reconstruir o caminho usando os pais
+                let mut current_node = sink;
+                path.clear();
+                while let Some(parent) = parents[current_node] {
+                    path.push(current_node);
+                    current_node = parent;
+                }
+                path.push(source);
+                path.reverse();
+                return Some(flow);
+            }
+
+            // Acessar as arestas do vértice atual
+            if let Some(vertex) = &self.vertices[current] {
+                for (i, edge) in vertex.edges.iter().enumerate().skip(edge_index) {
+                    let residual_capacity = edge.residual_capacity();
+                    if residual_capacity > 0.0 && !visited[edge.target] {
+                        // Registrar o pai do vértice alvo
+                        parents[edge.target] = Some(current);
+                        // Adicionar o próximo estado à pilha
+                        stack.push((current, i + 1, flow)); // Continuar a explorar as arestas restantes do vértice atual
+                        stack.push((edge.target, 0, flow.min(residual_capacity))); // Explorar o próximo vértice
+                        break;
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     pub fn ford_fulkerson(&mut self, source: usize, sink: usize) -> f64 {
@@ -680,7 +712,8 @@ impl Graph {
             let mut visited = vec![false; self.vertices.len()];
             let mut path = vec![source];
 
-            if let Some(flow) = self.find_augmenting_path(source, sink, &mut visited, &mut path) {
+            if let Some(flow) = self.find_augmenting_path_ff(source, sink, &mut visited, &mut path)
+            {
                 max_flow += flow;
 
                 // Atualizar o fluxo no caminho encontrado
@@ -708,6 +741,55 @@ impl Graph {
                 }
             } else {
                 break; // Nenhum caminho de aumento encontrado
+            }
+        }
+
+        max_flow
+    }
+
+    fn update_flows(&mut self, path: &[usize], path_flow: f64) {
+        for i in 0..path.len() - 1 {
+            let u = path[i];
+            let v = path[i + 1];
+
+            // Atualiza o fluxo na aresta u -> v
+            if let Some(vertex) = self.vertices[u].as_mut() {
+                if let Some(edge) = vertex.edges.iter_mut().find(|e| e.target == v) {
+                    edge.flow = Some(edge.flow.unwrap_or(0.) + path_flow);
+                }
+            }
+
+            // Atualiza o fluxo reverso na aresta v -> u
+            if let Some(vertex) = self.vertices[v].as_mut() {
+                if let Some(edge) = vertex.edges.iter_mut().find(|e| e.target == u) {
+                    edge.flow = Some(edge.flow.unwrap_or(0.) - path_flow);
+                } else {
+                    // Se a aresta reversa não existe, crie-a
+                    vertex.edges.push(Edge {
+                        target: u,
+                        weight: 0.0,
+                        capacity: Some(0.),
+                        flow: Some(-path_flow),
+                    });
+                }
+            }
+        }
+    }
+
+    pub fn edmonds_karp(&mut self, source: usize, sink: usize) -> f64 {
+        let mut max_flow = 0.0;
+
+        loop {
+            // Encontra um caminho de aumento
+            if let Some((path, path_flow)) = self.find_augmenting_path(source, sink) {
+                // Atualiza o fluxo no grafo
+                self.update_flows(&path, path_flow);
+
+                // Incrementa o fluxo total
+                max_flow += path_flow;
+            } else {
+                // Não há mais caminhos de aumento
+                break;
             }
         }
 

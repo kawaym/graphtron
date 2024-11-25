@@ -1,26 +1,26 @@
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Edge {
     pub(super) target: usize,
     pub(super) weight: f64,
     #[allow(dead_code)]
-    pub(super) capacity: Option<usize>,
+    pub(super) capacity: Option<f64>,
     #[allow(dead_code)]
-    pub(super) flow: Option<usize>,
+    pub(super) flow: Option<f64>,
 }
 
 impl Edge {
     pub fn residual_capacity(&self) -> f64 {
-        self.capacity.unwrap_or(0) as f64 - self.flow.unwrap_or(0) as f64
+        self.capacity.unwrap_or(0.) as f64 - self.flow.unwrap_or(0.) as f64
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) enum VertexStatus {
     Marked,
     Unmarked,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 ///A vertex is a fundamental unit of a graph that represents an individual entity or point. Represents its neighbors with a adjacency list
 pub struct Vertex {
     id: usize,
@@ -45,13 +45,13 @@ impl Vertex {
     }
 
     /// Adds a edge to the vertex
-    pub fn add_edge(&mut self, target: &usize, weight: &f64, capacity: &Option<usize>) {
+    pub fn add_edge(&mut self, target: &usize, weight: &f64, capacity: &Option<f64>) {
         self.add_degree();
         self.edges.push(Edge {
             target: *target,
             weight: *weight,
             capacity: *capacity,
-            flow: Some(0),
+            flow: Some(0.),
         });
     }
 
