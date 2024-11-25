@@ -1,5 +1,8 @@
 use core::f64;
 use ordered_float::OrderedFloat;
+use std::fs::{self, File};
+use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, VecDeque},
@@ -28,6 +31,7 @@ impl PartialOrd for State {
     }
 }
 
+#[derive(Debug)]
 /// A graph is a mathematical structure used to model pairwise relationships between objects. It consists of vertices connected by edges.
 pub struct Graph {
     vertices: Vec<Option<Vertex>>,
@@ -35,6 +39,28 @@ pub struct Graph {
     components: Option<Vec<Vec<usize>>>,
     has_negative_weights: bool,
 }
+fn read_lines_from_file<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
+}
+
+fn read_numbers_from_line(line: String) -> Option<(String, String, String)> {
+    let parts: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
+
+    if let (Ok(num1), Ok(num2), Ok(num3)) = (
+        parts[0].parse::<String>(),
+        parts[1].parse::<String>(),
+        parts[2].parse::<String>(),
+    ) {
+        return Some((num1, num2, num3));
+    }
+
+    None
+}
+
 
 ///Methods working with creation and update to the graph
 impl Graph {
@@ -53,6 +79,50 @@ impl Graph {
         graph
     }
 
+    pub fn clean_flow(&mut self) {
+        for vert in &mut self.vertices {
+            if let Some(v) = vert {
+                for edge in &mut v.edges {
+                    edge.flow = None;
+                }
+            }
+        }
+    }
+
+    pub fn _read_graph(filename: &str, is_bidirectional: bool) -> Graph {
+        let mut graph: Graph = Graph::new(0, Some(is_bidirectional));
+
+        if let Ok(lines) = read_lines_from_file(filename) {
+            let mut count = 0;
+            for line in lines.flatten() {
+                if count == 0 {
+                    graph = Graph::new(line.parse::<usize>().unwrap(), Some(is_bidirectional));
+                    count += 1;
+                    continue;
+                }
+                let numbers = read_numbers_from_line(line).unwrap();
+                graph.add_vertex(&(numbers.0.parse::<usize>().unwrap() - 1),);
+                graph.add_vertex(&(numbers.1.parse::<usize>().unwrap() - 1),);
+                graph.add_edge(
+                    &(numbers.0.parse::<usize>().unwrap() - 1),
+                    &(numbers.1.parse::<usize>().unwrap() - 1),
+                    &1.0,
+                    &Some(numbers.2.parse::<f64>().unwrap()), &None
+                );
+            }
+        }
+        return graph;
+    }
+
+    pub fn from_file_directional(filename: &str) -> Graph {
+        Graph::_read_graph(filename, true)
+    }
+
+    pub fn from_file(filename: &str) -> Graph {
+        Graph::_read_graph(filename, false)
+    }
+
+
     /// Adds a vertex to the graph
     pub fn add_vertex(&mut self, id: &usize) {
         match &self.vertices[*id] {
@@ -69,8 +139,8 @@ impl Graph {
         from: &usize,
         to: &usize,
         weight: &f64,
-        capactiy: &Option<usize>,
-        flow: &Option<usize>,
+        capactiy: &Option<f64>,
+        flow: &Option<f64>,
     ) -> Result<(), &str> {
         match &self.vertices[*from] {
             Some(value) => value,
@@ -553,35 +623,54 @@ impl Graph {
 
 impl Graph {
     fn find_augmenting_path(
-        &self,
-        source: usize,
-        sink: usize,
-        visited: &mut Vec<bool>,
-        path: &mut Vec<usize>,
-    ) -> Option<f64> {
-        if source == sink {
-            return Some(f64::INFINITY);
+    &self,
+    source: usize,
+    sink: usize,
+    visited: &mut Vec<bool>,
+    path: &mut Vec<usize>,
+) -> Option<f64> {
+    let mut stack: Vec<(usize, usize, f64)> = vec![(source, 0, f64::INFINITY)];
+    let mut parents: Vec<Option<usize>> = vec![None; self.vertices.len()];
+
+    while let Some((current, edge_index, flow)) = stack.pop() {
+        // Marcar o vértice como visitado
+        visited[current] = true;
+
+        // Verificar se chegamos ao destino
+        if current == sink {
+            // Reconstruir o caminho usando os pais
+            let mut current_node = sink;
+            path.clear();
+            while let Some(parent) = parents[current_node] {
+                path.push(current_node);
+                current_node = parent;
+            }
+            path.push(source);
+            path.reverse();
+            return Some(flow);
         }
 
-        visited[source] = true;
-
-        if let Some(vertex) = &self.vertices[source] {
-            for edge in &vertex.edges {
+        // Acessar as arestas do vértice atual
+        if let Some(vertex) = &self.vertices[current] {
+            for (i, edge) in vertex.edges.iter().enumerate().skip(edge_index) {
                 let residual_capacity = edge.residual_capacity();
                 if residual_capacity > 0.0 && !visited[edge.target] {
-                    path.push(edge.target);
-
-                    if let Some(flow) = self.find_augmenting_path(edge.target, sink, visited, path)
-                    {
-                        return Some(flow.min(residual_capacity));
-                    }
-
-                    path.pop();
+                    // Registrar o pai do vértice alvo
+                    parents[edge.target] = Some(current);
+                    // Adicionar o próximo estado à pilha
+                    stack.push((current, i + 1, flow)); // Continuar a explorar as arestas restantes do vértice atual
+                    stack.push((
+                        edge.target,
+                        0,
+                        flow.min(residual_capacity),
+                    )); // Explorar o próximo vértice
+                    break;
                 }
             }
         }
+    }
 
-        None
+    None
     }
 
     pub fn ford_fulkerson(&mut self, source: usize, sink: usize) -> f64 {
@@ -602,7 +691,7 @@ impl Graph {
                     if let Some(vertex) = &mut self.vertices[u] {
                         for edge in &mut vertex.edges {
                             if edge.target == v {
-                                edge.flow = Some(edge.flow.unwrap_or(0) + flow as usize);
+                                edge.flow = Some(edge.flow.unwrap_or(0.) + flow);
                                 break;
                             }
                         }
@@ -611,7 +700,7 @@ impl Graph {
                     if let Some(vertex) = &mut self.vertices[v] {
                         for edge in &mut vertex.edges {
                             if edge.target == u {
-                                edge.flow = Some(edge.flow.unwrap_or(0) - flow as usize);
+                                edge.flow = Some(edge.flow.unwrap_or(0.) - flow);
                                 break;
                             }
                         }
