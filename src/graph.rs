@@ -621,58 +621,29 @@ impl Graph {
 }
 
 impl Graph {
-    fn find_augmenting_path(&mut self, source: usize, sink: usize) -> Option<(Vec<usize>, f64)> {
-        let (_, visited_order, parents) = self.bfs_core(source, Some(sink));
 
-        // Se o `sink` não foi visitado, não há caminho de aumento
-        if parents[sink].is_none() {
-            return None;
-        }
-
-        // Reconstrói o caminho de aumento a partir dos pais
-        let mut path = Vec::new();
-        let mut current = sink;
-        while let Some(parent) = parents[current] {
-            path.push(current);
-            current = parent;
-        }
-        path.push(source);
-        path.reverse();
-
-        // Determina o fluxo máximo permitido pelo caminho
-        let mut path_flow = f64::MAX;
-        for i in 0..path.len() - 1 {
-            let u = path[i];
-            let v = path[i + 1];
-            if let Some(vertex) = &self.vertices[u] {
-                if let Some(edge) = vertex.edges.iter().find(|e| e.target == v) {
-                    path_flow = path_flow.min(edge.residual_capacity());
-                }
-            }
-        }
-
-        Some((path, path_flow))
-    }
-
-    fn find_augmenting_path_ff(
+    fn find_augmenting_path(
         &self,
         source: usize,
         sink: usize,
         visited: &mut Vec<bool>,
         path: &mut Vec<usize>,
     ) -> Option<f64> {
-        let mut stack: Vec<(usize, usize, f64)> = vec![(source, 0, f64::INFINITY)];
+        use std::collections::VecDeque;
+
+        let mut queue: VecDeque<(usize, f64)> = VecDeque::new();
         let mut parents: Vec<Option<usize>> = vec![None; self.vertices.len()];
 
-        while let Some((current, edge_index, flow)) = stack.pop() {
-            // Marcar o vértice como visitado
-            visited[current] = true;
+        // Start BFS from the source
+        queue.push_back((source, f64::INFINITY));
+        visited[source] = true;
 
-            // Verificar se chegamos ao destino
+        while let Some((current, flow)) = queue.pop_front() {
+            // Check if we reached the sink
             if current == sink {
-                // Reconstruir o caminho usando os pais
-                let mut current_node = sink;
+                // Reconstruct the path
                 path.clear();
+                let mut current_node = sink;
                 while let Some(parent) = parents[current_node] {
                     path.push(current_node);
                     current_node = parent;
@@ -682,22 +653,24 @@ impl Graph {
                 return Some(flow);
             }
 
-            // Acessar as arestas do vértice atual
+            // Explore neighbors
             if let Some(vertex) = &self.vertices[current] {
-                for (i, edge) in vertex.edges.iter().enumerate().skip(edge_index) {
+                for edge in &vertex.edges {
                     let residual_capacity = edge.residual_capacity();
+
                     if residual_capacity > 0.0 && !visited[edge.target] {
-                        // Registrar o pai do vértice alvo
+                        // Mark the vertex as visited
+                        visited[edge.target] = true;
+                        // Record the parent for path reconstruction
                         parents[edge.target] = Some(current);
-                        // Adicionar o próximo estado à pilha
-                        stack.push((current, i + 1, flow)); // Continuar a explorar as arestas restantes do vértice atual
-                        stack.push((edge.target, 0, flow.min(residual_capacity))); // Explorar o próximo vértice
-                        break;
+                        // Add to the queue with the updated flow
+                        queue.push_back((edge.target, flow.min(residual_capacity)));
                     }
                 }
             }
         }
 
+        // If we exhaust the queue without finding a path to the sink
         None
     }
 
@@ -708,7 +681,7 @@ impl Graph {
             let mut visited = vec![false; self.vertices.len()];
             let mut path = vec![source];
 
-            if let Some(flow) = self.find_augmenting_path_ff(source, sink, &mut visited, &mut path)
+            if let Some(flow) = self.find_augmenting_path(source, sink, &mut visited, &mut path)
             {
                 max_flow += flow;
 
@@ -743,83 +716,4 @@ impl Graph {
         max_flow
     }
 
-    fn update_flows(&mut self, path: &[usize], path_flow: f64) {
-        for i in 0..path.len() - 1 {
-            let u = path[i];
-            let v = path[i + 1];
-
-            // Atualiza o fluxo na aresta u -> v
-            if let Some(vertex) = self.vertices[u].as_mut() {
-                if let Some(edge) = vertex.edges.iter_mut().find(|e| e.target == v) {
-                    edge.flow = Some(edge.flow.unwrap_or(0.) + path_flow);
-                }
-            }
-
-            // Atualiza o fluxo reverso na aresta v -> u
-            if let Some(vertex) = self.vertices[v].as_mut() {
-                if let Some(edge) = vertex.edges.iter_mut().find(|e| e.target == u) {
-                    edge.flow = Some(edge.flow.unwrap_or(0.) - path_flow);
-                } else {
-                    // Se a aresta reversa não existe, crie-a
-                    vertex.edges.push(Edge {
-                        target: u,
-                        weight: 0.0,
-                        capacity: Some(0.),
-                        flow: Some(-path_flow),
-                    });
-                }
-            }
-        }
-    }
-
-    pub fn clone_with_zero_flows(&self) -> Graph {
-        Graph {
-            vertices: self
-                .vertices
-                .iter()
-                .map(|v| {
-                    v.as_ref().map(|vertex| Vertex {
-                        id: vertex.id,
-                        edges: vertex
-                            .edges
-                            .iter()
-                            .map(|edge| Edge {
-                                target: edge.target,
-                                weight: edge.weight,
-                                capacity: edge.capacity,
-                                flow: Some(0.), // Inicializa fluxo como zero
-                            })
-                            .collect(),
-                        degree: vertex.degree,
-                        status: VertexStatus::Unmarked,
-                    })
-                })
-                .collect(),
-            is_bidirectional: self.is_bidirectional,
-            components: None,
-            has_negative_weights: self.has_negative_weights,
-        }
-    }
-
-    pub fn edmonds_karp(&mut self, source: usize, sink: usize) -> f64 {
-        // Cria uma cópia do grafo para operar
-        let mut residual_graph = self.clone_with_zero_flows();
-        let mut max_flow = 0.0;
-
-        loop {
-            // Encontra um caminho de aumento no grafo residual
-            if let Some((path, path_flow)) = residual_graph.find_augmenting_path(source, sink) {
-                // Atualiza o fluxo no grafo residual
-                residual_graph.update_flows(&path, path_flow);
-
-                // Incrementa o fluxo total
-                max_flow += path_flow;
-            } else {
-                // Não há mais caminhos de aumento
-                break;
-            }
-        }
-
-        max_flow
-    }
 }
